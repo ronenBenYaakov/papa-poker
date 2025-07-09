@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Poker Win Probability</title>
+</head>
+<body>
+  <h2>Upload Hand Images</h2>
+  <form method="POST" enctype="multipart/form-data">
+    <input type="file" name="images" multiple accept="image/*" required><br><br>
+    <label>Select game type:</label><br>
+    <input type="radio" name="game_type" value="texas_holdem" checked> Texas Hold'em<br>
+    <input type="radio" name="game_type" value="omaha"> Omaha<br><br>
+    <input type="submit" value="Calculate Win Probabilities">
+  </form>
+  {% if error %}
+    <p style="color: red;">{{ error }}</p>
+  {% endif %}
+</body>
+</html>

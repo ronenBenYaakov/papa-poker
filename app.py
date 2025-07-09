@@ -1,12 +1,18 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
+from flask import Flask, render_template, request, redirect, url_for
+from werkzeug.utils import secure_filename
 from itertools import combinations
 from inference import get_model
+import os
 import cv2
 from treys import Card, Evaluator, Deck
 from collections import Counter
+import tempfile
 
-# === Load model globally once ===
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit upload size
+
+# === Load model globally ===
 model = get_model(model_id="poker-j2pzb/2")
 
 # === Parse card string for Treys ===
@@ -25,7 +31,7 @@ def create_hands(image_paths):
         labels_list = [p.class_name for p in predictions]
 
         if len(labels_list) % 2 != 0:
-            raise ValueError(f"{path}: Detected cards do not form a complete hand.")
+            raise ValueError(f"{os.path.basename(path)}: Detected cards do not form a complete hand.")
 
         hand = labels_list[:2]
         hands.append(hand)
@@ -70,42 +76,34 @@ def simulate_win_probabilities(known_hands, game_type="texas_holdem", nb_simulat
 
     return [round(wins[i] / nb_simulation, 4) for i in range(num_real)]
 
-# === GUI Code ===
-def run_simulation(game_type):
-    try:
-        image_paths = filedialog.askopenfilenames(title="Select hand images (1 hand per image)", 
-                                                  filetypes=[("Image files", "*.jpg *.png")])
-        if not image_paths:
-            return
+# === Routes ===
 
-        known_hands = create_hands(image_paths)
-        probs = simulate_win_probabilities(known_hands, game_type=game_type)
+@app.route("/", methods=["GET", "POST"])
+def index():
+    if request.method == "POST":
+        files = request.files.getlist("images")
+        game_type = request.form.get("game_type")
 
-        result_str = "\n".join([f"Hand {i+1}: {prob*100:.2f}%" for i, prob in enumerate(probs)])
-        messagebox.showinfo(f"{game_type.replace('_', ' ').title()} Win Probabilities", result_str)
+        if not files:
+            return render_template("index.html", error="No files selected.")
 
-    except Exception as e:
-        messagebox.showerror("Error", str(e))
+        saved_paths = []
+        for file in files:
+            filename = secure_filename(file.filename)
+            path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            file.save(path)
+            saved_paths.append(path)
 
-# === Tkinter Window ===
-def create_gui():
-    window = tk.Tk()
-    window.title("Poker Win Probability Simulator")
-    window.geometry("400x220")
+        try:
+            known_hands = create_hands(saved_paths)
+            probs = simulate_win_probabilities(known_hands, game_type=game_type)
+            results = [(f"Hand {i+1}", f"{prob*100:.2f}%") for i, prob in enumerate(probs)]
+            return render_template("result.html", results=results, game_type=game_type.replace("_", " ").title())
+        except Exception as e:
+            return render_template("index.html", error=str(e))
 
-    label = tk.Label(window, text="Choose the Poker Game Type:", font=("Arial", 14))
-    label.pack(pady=20)
+    return render_template("index.html")
 
-    btn_texas = tk.Button(window, text="Texas Hold'em", font=("Arial", 12), bg="blue", fg="white",
-                          command=lambda: run_simulation("texas_holdem"))
-    btn_texas.pack(pady=10, ipadx=10, ipady=5)
-
-    btn_omaha = tk.Button(window, text="Omaha", font=("Arial", 12), bg="orange", fg="white",
-                         command=lambda: run_simulation("omaha"))
-    btn_omaha.pack(pady=10, ipadx=10, ipady=5)
-
-    window.mainloop()
-
-# === Entry Point ===
+# === Run app ===
 if __name__ == "__main__":
-    create_gui()
+    app.run(debug=True)
